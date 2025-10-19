@@ -92,7 +92,7 @@ uv venv
 # activate
 source .venv/bin/activate
 # sync dependencies
-uv synv
+uv sync --all-groups
 # Set up pre-commit hooks
 pre-commit install
 ```

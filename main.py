@@ -130,7 +130,7 @@ def query_emoji(text: str, n: int = typer.Option(3, help="Number of emojis to re
     cur = conn.cursor()
 
     cur.execute(
-        f"""
+        """
         SELECT e.name, e.emoji, distance
         FROM emoji_embeddings v
         JOIN emojis e ON v.rowid = e.id
