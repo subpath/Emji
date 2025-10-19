@@ -1,0 +1,23 @@
+[project]
+name = "emoji-cli"
+version = "0.1.0"
+description = "Emji is locally hosted semantic search cli for emojies"
+readme = "README.md"
+requires-python = ">=3.12"
+
+dependencies = [
+    "inquirerpy>=0.3.4",
+    "numpy>=2.3.4",
+    "onnxruntime>=1.23.1",
+    "onnxruntime-tools>=1.7.0",
+    "pyperclip>=1.11.0",
+    "sqlite-vec>=0.1.6",
+    "transformers>=4.57.1",
+    "typer>=0.19.2",
+]
+
+[dependency-groups]
+lint = ["pre-commit>=4.3.0", "ruff>=0.14.1"]
+
+[project.scripts]
+emji = "main:app"
