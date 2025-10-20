@@ -1,6 +1,7 @@
 # Emji
 
 On-device emoji semantic lookup CLI powered by vector search
+![Screen Recording 2025-10-20 at 09 42 37 (online-video-cutter com)(1)](https://github.com/user-attachments/assets/49de86ad-963d-4c48-bf8b-d2e371abb143)
 
 ## What it does
 
@@ -8,14 +9,22 @@ It's a simple CLI that uses [sentence-transformers/all-MiniLM-L6-v2](https://hug
 
 ## Installation
 
-### Prerequisites
-
-- Python 3.12 or higher
-
-### Install from source
+### From GitHub (easiest)
 
 ```bash
-uv pip install -e .
+uv tool install https://github.com/subpath/Emji.git
+
+emji wave
+```
+
+### From source (for development)
+
+```bash
+git clone https://github.com/subpath/Emji.git
+cd Emji
+uv tool install -e .
+
+emji wave
 ```
 
 ### Data Source
