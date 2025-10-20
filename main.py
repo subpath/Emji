@@ -23,26 +23,69 @@ from rich.progress import (
     TextColumn,
 )
 import multiprocessing
+import urllib.request
 
 multiprocessing.set_start_method("spawn", force=True)
 
-app = typer.Typer(help="Emoji semantic search CLI 🔍")
+app = typer.Typer(add_completion=False, help="Emoji semantic search CLI 🔍")
 
 MODEL_FILE = Path("model_qint8_arm64.onnx")
-EMOJI_FILE = Path("shortnames.json")
+DEFAULT_EMOJI_FILE = Path("shortnames.json")
+OVERRIDE_EMOJI_FILE = Path("shortnames_override.json")
 DB_FILE = Path("emoji_index.db")
 
-tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-session = InferenceSession(str(MODEL_FILE), providers=["CPUExecutionProvider"])
+MODEL_URL = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model_qint8_arm64.onnx"
+EMOJI_URL = "https://gist.githubusercontent.com/subpath/13bd5c15f76f451dfcb85421a53f0666/raw/1d362e4b4addfcd920b88f949090c6e82bf2c791/emojies_shortnames.json"
+
+
+def interactive_download(path: Path, url: str, label: str):
+    consent = inquirer.select(
+        message=f"{label} not found. Download it?",
+        choices=["yes", "no"],
+        default="yes",
+    ).execute()
+
+    if consent == "no":
+        typer.echo(f"Cannot continue without {label}. Exiting.")
+        raise typer.Exit(1)
+
+    typer.echo(f"Downloading {label}...")
+    with urllib.request.urlopen(url) as response, open(path, "wb") as out_file:
+        total = int(response.getheader("Content-Length", 0))
+        with Progress(
+            SpinnerColumn(),
+            TextColumn(f"[progress.description]{label}"),
+            BarColumn(bar_width=None),
+            TextColumn("{task.completed} of {task.total} bytes"),
+            TimeElapsedColumn(),
+        ) as progress:
+            task = progress.add_task(f"Fetching {label}", total=total)
+            downloaded = 0
+            chunk_size = 8192
+            while True:
+                chunk = response.read(chunk_size)
+                if not chunk:
+                    break
+                out_file.write(chunk)
+                downloaded += len(chunk)
+                progress.update(task, completed=downloaded)
+    typer.echo(f"Downloaded {label} → {path}")
+
+
+def ensure_dependencies():
+    if not MODEL_FILE.exists():
+        interactive_download(MODEL_FILE, MODEL_URL, "Model")
+    if not DEFAULT_EMOJI_FILE.exists():
+        interactive_download(DEFAULT_EMOJI_FILE, EMOJI_URL, "Emoji data")
+
+
+def get_emoji_file() -> Path:
+    return OVERRIDE_EMOJI_FILE if OVERRIDE_EMOJI_FILE.exists() else DEFAULT_EMOJI_FILE
 
 
 def encode(text: str) -> np.ndarray:
     inputs = tokenizer(
-        text,
-        return_tensors="np",
-        padding="max_length",
-        truncation=True,
-        max_length=128,
+        text, return_tensors="np", padding="max_length", truncation=True, max_length=128
     )
     outputs = session.run(None, dict(inputs))
     last_hidden_state = outputs[0]
@@ -68,15 +111,14 @@ def serialize_f32(vector: List[float]) -> bytes:
     return struct.pack("%sf" % len(vector), *vector)
 
 
-@app.command("build-index")
 def build_index():
+    ensure_dependencies()
     if DB_FILE.exists():
         typer.confirm(f"{DB_FILE} exists. Rebuild?", abort=True)
         DB_FILE.unlink()
 
     conn = connect_db()
     cur = conn.cursor()
-
     cur.execute("""
         CREATE TABLE emojis (
             id INTEGER PRIMARY KEY,
@@ -89,11 +131,10 @@ def build_index():
         "CREATE VIRTUAL TABLE emoji_embeddings USING vec0(embedding float[384])"
     )
 
-    with open(EMOJI_FILE) as f:
+    with open(get_emoji_file()) as f:
         emojis = json.load(f)
 
     typer.echo("Building embeddings...")
-
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -120,24 +161,29 @@ def build_index():
     typer.echo(f"✅ Index built with {len(emojis)} entries at {DB_FILE}")
 
 
-@app.command("query")
-def query_emoji(text: str, n: int = typer.Option(3, help="Number of emojis to return")):
+def query_emoji(text: str, n: int = 3):
+    ensure_dependencies()
     if not DB_FILE.exists():
-        typer.echo("Index not found. Run: emoji build-index")
-        raise typer.Exit(1)
+        choice = inquirer.select(
+            message="Emoji index not found. Build it now?",
+            choices=["yes", "no"],
+            default="yes",
+        ).execute()
+        if choice == "no":
+            typer.echo("Exiting. Index required for search.")
+            raise typer.Exit(1)
+        build_index()
 
     conn = connect_db()
     cur = conn.cursor()
-
     cur.execute(
         """
         SELECT e.name, e.emoji, distance
         FROM emoji_embeddings v
         JOIN emojis e ON v.rowid = e.id
-        WHERE v.embedding MATCH ?
-              AND k = ?
+        WHERE v.embedding MATCH ? AND k = ?
         ORDER BY distance
-    """,
+        """,
         [serialize_f32(encode(sanitize(text))), n],
     )
     results = cur.fetchall()
@@ -148,18 +194,43 @@ def query_emoji(text: str, n: int = typer.Option(3, help="Number of emojis to re
         raise typer.Exit(0)
 
     choices = [
-        f"{emoji}  {name} {round(1 / (1 + distance), 3)}"
+        f"{emoji} {name} {round(1 / (1 + distance), 3)}"
         for name, emoji, distance in results
     ]
     selected = inquirer.select(
         message="Select the correct emoji:", choices=choices, default=choices[0]
     ).execute()
-
     chosen_index = choices.index(selected)
     chosen_emoji = results[chosen_index][1]
     pyperclip.copy(chosen_emoji)
     typer.echo(f"{chosen_emoji} copied to clipboard")
 
+
+@app.command()
+def main(
+    ctx: typer.Context = typer.Option(None, hidden=True),
+    query: List[str] = typer.Argument(None, help="Text to search emojis for"),
+    n: int = typer.Option(3, "--n", help="Number of emoji results to return"),
+    build_index_flag: bool = typer.Option(
+        False, "--build-index", help="Force rebuild the emoji index"
+    ),
+):
+    if not query and not build_index_flag:
+        typer.echo(ctx.get_help())
+        raise typer.Exit(0)
+
+    ensure_dependencies()
+
+    if build_index_flag:
+        build_index()
+        return
+
+    query_emoji(" ".join(query), n=n)
+
+
+ensure_dependencies()
+tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+session = InferenceSession(str(MODEL_FILE), providers=["CPUExecutionProvider"])
 
 if __name__ == "__main__":
     app()
