@@ -1,6 +1,9 @@
 # Emji
 
 On-device emoji semantic lookup CLI powered by vector search
+![Screen Recording 2025-10-20 at 09 42 37 (online-video-cutter com)(1)](https://github.com/user-attachments/assets/49de86ad-963d-4c48-bf8b-d2e371abb143)
+
+
 
 ## What it does
 
