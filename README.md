@@ -20,7 +20,18 @@ uv pip install -e .
 
 ### Data Source
 
-The CLI will automatically download the emoji data from this [gist](https://gist.github.com/subpath/13bd5c15f76f451dfcb85421a53f0666) when needed. You can also use your own emoji data by placing it in `shortnames_override.json`.
+All data is stored under `~/.emji`:
+
+- Model file: `~/.emji/model_qint8_arm64.onnx`
+- Default emoji data: `~/.emji/shortnames.json`
+- Optional override data: `~/.emji/shortnames_override.json` (takes precedence if present)
+- Vector index: `~/.emji/emoji_index.db`
+- Config: `~/.emji/.config`
+
+On first run, the CLI will automatically download:
+
+- The emoji data from this [gist](https://gist.github.com/subpath/13bd5c15f76f451dfcb85421a53f0666)
+- The quantized ONNX model from `sentence-transformers/all-MiniLM-L6-v2`
 
 ### Model
 
@@ -46,12 +57,19 @@ The tiny dedicated finetuned MiniLM is coming soon.
   emji --build-index
   ```
 
+4. **Cleanup all Emji data** (removes `~/.emji`):
+
+  ```bash
+  emji --cleanup
+  ```
+
 ## Usage
 
 ### Commands
 
 - `emji <text>` - Search for emojis matching your description
 - `emji --build-index` - Force rebuild the semantic search index
+- `emji --cleanup` - Delete all Emji data and config under `~/.emji`
 
 **Options:**
 

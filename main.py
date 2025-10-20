@@ -29,13 +29,33 @@ multiprocessing.set_start_method("spawn", force=True)
 
 app = typer.Typer(add_completion=False, help="Emoji semantic search CLI 🔍")
 
-MODEL_FILE = Path("model_qint8_arm64.onnx")
-DEFAULT_EMOJI_FILE = Path("shortnames.json")
-OVERRIDE_EMOJI_FILE = Path("shortnames_override.json")
-DB_FILE = Path("emoji_index.db")
+HOME_DIR = Path.home() / ".emji"
+HOME_DIR.mkdir(parents=True, exist_ok=True)
 
-MODEL_URL = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model_qint8_arm64.onnx"
-EMOJI_URL = "https://gist.githubusercontent.com/subpath/13bd5c15f76f451dfcb85421a53f0666/raw/1d362e4b4addfcd920b88f949090c6e82bf2c791/emojies_shortnames.json"
+
+CONFIG_FILE = HOME_DIR / ".config"
+DEFAULT_CONFIG = {
+    "MODEL_URL": "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model_qint8_arm64.onnx",
+    "EMOJI_URL": "https://gist.githubusercontent.com/subpath/13bd5c15f76f451dfcb85421a53f0666/raw/1d362e4b4addfcd920b88f949090c6e82bf2c791/emojies_shortnames.json",
+}
+
+
+def load_config() -> dict:
+    if not CONFIG_FILE.exists():
+        with open(CONFIG_FILE, "w") as f:
+            json.dump(DEFAULT_CONFIG, f, indent=2)
+        return DEFAULT_CONFIG
+    with open(CONFIG_FILE) as f:
+        return json.load(f)
+
+
+CONFIG = load_config()
+
+
+MODEL_FILE = HOME_DIR / "model_qint8_arm64.onnx"
+DEFAULT_EMOJI_FILE = HOME_DIR / "shortnames.json"
+OVERRIDE_EMOJI_FILE = HOME_DIR / "shortnames_override.json"
+DB_FILE = HOME_DIR / "emoji_index.db"
 
 
 def interactive_download(path: Path, url: str, label: str):
@@ -52,14 +72,15 @@ def interactive_download(path: Path, url: str, label: str):
     typer.echo(f"Downloading {label}...")
     with urllib.request.urlopen(url) as response, open(path, "wb") as out_file:
         total = int(response.getheader("Content-Length", 0))
+        total_mb = total / (1024 * 1024)
         with Progress(
             SpinnerColumn(),
             TextColumn(f"[progress.description]{label}"),
             BarColumn(bar_width=None),
-            TextColumn("{task.completed} of {task.total} bytes"),
+            TextColumn("{task.completed:.1f}/{task.total:.1f} MB"),
             TimeElapsedColumn(),
         ) as progress:
-            task = progress.add_task(f"Fetching {label}", total=total)
+            task = progress.add_task(f"Fetching {label}", total=total_mb)
             downloaded = 0
             chunk_size = 8192
             while True:
@@ -68,15 +89,15 @@ def interactive_download(path: Path, url: str, label: str):
                     break
                 out_file.write(chunk)
                 downloaded += len(chunk)
-                progress.update(task, completed=downloaded)
+                progress.update(task, completed=downloaded / (1024 * 1024))
     typer.echo(f"Downloaded {label} → {path}")
 
 
 def ensure_dependencies():
     if not MODEL_FILE.exists():
-        interactive_download(MODEL_FILE, MODEL_URL, "Model")
+        interactive_download(MODEL_FILE, CONFIG["MODEL_URL"], "Model")
     if not DEFAULT_EMOJI_FILE.exists():
-        interactive_download(DEFAULT_EMOJI_FILE, EMOJI_URL, "Emoji data")
+        interactive_download(DEFAULT_EMOJI_FILE, CONFIG["EMOJI_URL"], "Emoji data")
 
 
 def get_emoji_file() -> Path:
@@ -214,9 +235,27 @@ def main(
     build_index_flag: bool = typer.Option(
         False, "--build-index", help="Force rebuild the emoji index"
     ),
+    cleanup_flag: bool = typer.Option(
+        False, "--cleanup", help="Delete all Emji data and config (~/.emji)"
+    ),
 ):
-    if not query and not build_index_flag:
+    if not query and not build_index_flag and not cleanup_flag:
         typer.echo(ctx.get_help())
+        raise typer.Exit(0)
+
+    if cleanup_flag:
+        confirm = inquirer.select(
+            message=f"Delete all files in {HOME_DIR}? This cannot be undone.",
+            choices=["yes", "no"],
+            default="no",
+        ).execute()
+        if confirm == "yes":
+            import shutil
+
+            shutil.rmtree(HOME_DIR, ignore_errors=True)
+            typer.echo(f"🧹 Removed {HOME_DIR}")
+        else:
+            typer.echo("Cleanup aborted.")
         raise typer.Exit(0)
 
     ensure_dependencies()
