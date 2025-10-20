@@ -79,10 +79,11 @@ The tiny dedicated finetuned MiniLM is coming soon.
 - `emji <text>` - Search for emojis matching your description
 - `emji --build-index` - Force rebuild the semantic search index
 - `emji --cleanup` - Delete all Emji data and config under `~/.emji`
+- `emji --show-stats` - Show emoji popularity statistics
 
 **Options:**
 
-- `--n <number>`: Number of results to return (default: 3)
+- `--n <number>`: Number of results to return (default: 3). Also limits rows for `--show-stats`.
 
 ### Examples
 
@@ -109,7 +110,18 @@ emji --build-index
 2. **Embedding Generation**: Uses a quantized version of `sentence-transformers/all-MiniLM-L6-v2` to convert emoji names and descriptions into 384-dimensional vectors
 3. **Vector Database**: Stores embeddings in SQLite with `sqlite-vec` extension for fast similarity search
 4. **Semantic Matching**: When you search, your query is converted to an embedding and compared against all emoji embeddings
-5. **Interactive Selection**: The best matches are presented in an interactive menu for you to choose from
+5. **Personalized Re-ranking**: Results are re-ranked using a blend of cosine similarity and historical click-through rates (CTR), controlled by `ALPHA` in the config. CTR impact increases with impressions and is discounted by rank.
+6. **Interactive Selection**: The best matches are presented in an interactive menu for you to choose from
+
+## Configuration
+
+A JSON config is stored at `~/.emji/.config` and is created on first run:
+
+- `ALPHA` (float): Balance between cosine similarity and CTR in ranking (default: 0.2)
+- `MODEL_URL` (string): URL to download the ONNX model
+- `EMOJI_URL` (string): URL to download the emoji shortnames JSON
+
+To override the emoji dataset entirely, place your file at `~/.emji/shortnames_override.json` (it takes precedence over the default).
 
 ## Development
 
