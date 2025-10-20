@@ -339,7 +339,6 @@ def show_stats(n: int = 10):
             (emoji,),
         )
         top_queries = [f"{q} ({c})" for q, c in cur.fetchall()]
-        print(top_queries)
         table.add_row(emoji, str(clicks), str(shown), ", ".join(top_queries))
 
     conn.close()
